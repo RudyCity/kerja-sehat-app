@@ -1,9 +1,9 @@
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton};
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use chrono::Local;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -52,6 +52,8 @@ pub struct AppStateData {
     pub reminders: Vec<Reminder>,
     pub pomodoro: Pomodoro,
     pub last_reset_date: String, // YYYY-MM-DD
+    pub language: String,        // "id" or "en"
+    pub sound_enabled: bool,
 }
 
 pub struct AppState {
@@ -126,6 +128,8 @@ fn get_initial_state() -> AppStateData {
             sessions_completed: 0,
         },
         last_reset_date: get_current_date_string(),
+        language: "id".to_string(),
+        sound_enabled: true,
     }
 }
 
@@ -135,7 +139,7 @@ fn get_state(state: State<'_, AppState>) -> AppStateData {
 }
 
 #[tauri::command]
-fn toggle_reminder(id: String, enabled: bool, state: State<'_, AppState>) -> AppStateData {
+fn toggle_reminder(id: String, enabled: bool, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
     let mut data = state.data.lock().unwrap();
     if let Some(reminder) = data.reminders.iter_mut().find(|r| r.id == id) {
         reminder.is_enabled = enabled;
@@ -145,11 +149,12 @@ fn toggle_reminder(id: String, enabled: bool, state: State<'_, AppState>) -> App
             reminder.next_trigger = None;
         }
     }
+    update_tray_menu(&app_handle, &data);
     data.clone()
 }
 
 #[tauri::command]
-fn log_reminder_progress(id: String, state: State<'_, AppState>) -> AppStateData {
+fn log_reminder_progress(id: String, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
     let mut data = state.data.lock().unwrap();
     if let Some(reminder) = data.reminders.iter_mut().find(|r| r.id == id) {
         reminder.progress_count = reminder.progress_count.saturating_add(1);
@@ -157,24 +162,36 @@ fn log_reminder_progress(id: String, state: State<'_, AppState>) -> AppStateData
             reminder.next_trigger = Some(get_current_time() + (reminder.interval_minutes as u64 * 60));
         }
     }
+    update_tray_menu(&app_handle, &data);
     data.clone()
 }
 
 #[tauri::command]
-fn update_reminder_settings(id: String, interval_minutes: u32, target: u32, state: State<'_, AppState>) -> AppStateData {
+fn update_reminder_settings(
+    id: String,
+    label: String,
+    message: String,
+    interval_minutes: u32,
+    target: u32,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppStateData {
     let mut data = state.data.lock().unwrap();
     if let Some(reminder) = data.reminders.iter_mut().find(|r| r.id == id) {
+        reminder.label = label;
+        reminder.message = message;
         reminder.interval_minutes = interval_minutes;
         reminder.progress_target = target;
         if reminder.is_enabled {
             reminder.next_trigger = Some(get_current_time() + (interval_minutes as u64 * 60));
         }
     }
+    update_tray_menu(&app_handle, &data);
     data.clone()
 }
 
 #[tauri::command]
-fn control_pomodoro(action: String, state: State<'_, AppState>) -> AppStateData {
+fn control_pomodoro(action: String, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
     let mut data = state.data.lock().unwrap();
     let pom = &mut data.pomodoro;
     let now = get_current_time();
@@ -224,11 +241,12 @@ fn control_pomodoro(action: String, state: State<'_, AppState>) -> AppStateData 
         _ => {}
     }
     
+    update_tray_menu(&app_handle, &data);
     data.clone()
 }
 
 #[tauri::command]
-fn update_pomodoro_settings(focus: u32, short: u32, long: u32, state: State<'_, AppState>) -> AppStateData {
+fn update_pomodoro_settings(focus: u32, short: u32, long: u32, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
     let mut data = state.data.lock().unwrap();
     let pom = &mut data.pomodoro;
     
@@ -249,6 +267,204 @@ fn update_pomodoro_settings(focus: u32, short: u32, long: u32, state: State<'_, 
         }
     }
     
+    update_tray_menu(&app_handle, &data);
+    data.clone()
+}
+
+fn get_reminder_translations(id: &str, lang: &str) -> (String, String) {
+    match lang {
+        "en" => match id {
+            "water" => (
+                "Drink Water".to_string(),
+                "Time to drink a glass of water to stay hydrated!".to_string(),
+            ),
+            "stretch" => (
+                "Stretching".to_string(),
+                "Get up, walk around, and do some light stretching!".to_string(),
+            ),
+            "eye" => (
+                "Eye Rest (20-20-20)".to_string(),
+                "Focus your eyes on an object 20 feet (6 meters) away for 20 seconds.".to_string(),
+            ),
+            "posture" => (
+                "Check Posture".to_string(),
+                "Adjust your sitting position. Straighten your back and relax your shoulders!".to_string(),
+            ),
+            _ => (id.to_string(), "".to_string()),
+        },
+        _ => match id {
+            "water" => (
+                "Minum Air".to_string(),
+                "Saatnya minum segelas air untuk tetap terhidrasi!".to_string(),
+            ),
+            "stretch" => (
+                "Peregangan".to_string(),
+                "Ayo berdiri, berjalan sedikit, dan lakukan peregangan ringan!".to_string(),
+            ),
+            "eye" => (
+                "Istirahat Mata (20-20-20)".to_string(),
+                "Fokuskan mata Anda ke obyek berjarak 20 kaki (6 meter) selama 20 detik.".to_string(),
+            ),
+            "posture" => (
+                "Periksa Postur".to_string(),
+                "Perbaiki posisi duduk Anda. Tegakkan punggung dan rilekskan bahu!".to_string(),
+            ),
+            _ => (id.to_string(), "".to_string()),
+        },
+    }
+}
+
+fn update_tray_menu(app_handle: &tauri::AppHandle, data: &AppStateData) {
+    let lang = &data.language;
+    let show_label = if lang == "en" { "Open Application" } else { "Buka Aplikasi" };
+    let quit_label = if lang == "en" { "Quit Kerja Sehat" } else { "Keluar Kerja Sehat" };
+
+    let menu = match Menu::new(app_handle) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+
+    if let Ok(show_item) = MenuItem::with_id(app_handle, "show", show_label, true, None::<&str>) {
+        let _ = menu.append(&show_item);
+    }
+
+    if let Ok(sep) = PredefinedMenuItem::separator(app_handle) {
+        let _ = menu.append(&sep);
+    }
+
+    // Header progress
+    let count_header_label = if lang == "en" { "Today's Progress:" } else { "Progress Hari Ini:" };
+    if let Ok(header) = MenuItem::with_id(app_handle, "header_count", count_header_label, false, None::<&str>) {
+        let _ = menu.append(&header);
+    }
+
+    // Pomodoro timer status (Live Countdown)
+    let minutes = data.pomodoro.time_left / 60;
+    let seconds = data.pomodoro.time_left % 60;
+    let time_str = format!("{:02}:{:02}", minutes, seconds);
+
+    let mode_str = match data.pomodoro.mode {
+        PomodoroMode::Focus => if lang == "en" { "Focus" } else { "Fokus" },
+        PomodoroMode::ShortBreak => if lang == "en" { "Short Break" } else { "Istirahat Pendek" },
+        PomodoroMode::LongBreak => if lang == "en" { "Long Break" } else { "Istirahat Panjang" },
+    };
+
+    let state_suffix = match data.pomodoro.state {
+        PomodoroState::Running => "".to_string(),
+        PomodoroState::Paused => if lang == "en" { " (Paused)" } else { " (Jeda)" }.to_string(),
+        PomodoroState::Idle => if lang == "en" { " (Ready)" } else { " (Siap)" }.to_string(),
+    };
+
+    let pom_timer_label = format!("⏱️ {}: {}{}", mode_str, time_str, state_suffix);
+    if let Ok(pom_timer_item) = MenuItem::with_id(app_handle, "pom_timer", &pom_timer_label, false, None::<&str>) {
+        let _ = menu.append(&pom_timer_item);
+    }
+
+    // Pomodoro sessions completed
+    let pom_sessions_label = if lang == "en" {
+        format!("🎯 Sessions Completed: {}", data.pomodoro.sessions_completed)
+    } else {
+        format!("🎯 Sesi Selesai: {}", data.pomodoro.sessions_completed)
+    };
+    if let Ok(pom_sessions_item) = MenuItem::with_id(app_handle, "pom_sessions", &pom_sessions_label, false, None::<&str>) {
+        let _ = menu.append(&pom_sessions_item);
+    }
+
+    // Reminders
+    for r in &data.reminders {
+        if r.is_enabled {
+            let emoji = match r.id.as_str() {
+                "water" => "💧",
+                "stretch" => "🏃",
+                "eye" => "👁️",
+                "posture" => "🪑",
+                _ => "✨",
+            };
+            let rem_label = format!("{} {}: {}/{}", emoji, r.label, r.progress_count, r.progress_target);
+            let menu_id = format!("log_{}", r.id);
+            if let Ok(rem_item) = MenuItem::with_id(app_handle, &menu_id, &rem_label, true, None::<&str>) {
+                let _ = menu.append(&rem_item);
+            }
+        }
+    }
+
+    if let Ok(sep) = PredefinedMenuItem::separator(app_handle) {
+        let _ = menu.append(&sep);
+    }
+
+    if let Ok(quit_item) = MenuItem::with_id(app_handle, "quit", quit_label, true, None::<&str>) {
+        let _ = menu.append(&quit_item);
+    }
+
+    if let Some(tray) = app_handle.tray_by_id("main_tray") {
+        let _ = tray.set_menu(Some(menu));
+        
+        let tooltip = if lang == "en" {
+            format!("Kerja Sehat\n{}: {}{}\nSessions Completed: {}", mode_str, time_str, state_suffix, data.pomodoro.sessions_completed)
+        } else {
+            format!("Kerja Sehat\n{}: {}{}\nSesi Selesai: {}", mode_str, time_str, state_suffix, data.pomodoro.sessions_completed)
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
+#[tauri::command]
+fn set_language(lang: String, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
+    let mut data = state.data.lock().unwrap();
+    data.language = lang.clone();
+    
+    // Update reminder labels & messages
+    for reminder in data.reminders.iter_mut() {
+        let (label, message) = get_reminder_translations(&reminder.id, &lang);
+        reminder.label = label;
+        reminder.message = message;
+    }
+    
+    // Update tray menu
+    update_tray_menu(&app_handle, &data);
+    
+    data.clone()
+}
+
+#[tauri::command]
+fn add_custom_reminder(
+    label: String,
+    interval_minutes: u32,
+    target: u32,
+    message: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppStateData {
+    let mut data = state.data.lock().unwrap();
+    let now = get_current_time();
+    let id = format!("custom_{}", now); // Generate a unique ID
+    let new_reminder = Reminder {
+        id,
+        label,
+        interval_minutes,
+        next_trigger: Some(now + interval_minutes as u64 * 60),
+        is_enabled: true,
+        progress_count: 0,
+        progress_target: target,
+        message,
+    };
+    data.reminders.push(new_reminder);
+    update_tray_menu(&app_handle, &data);
+    data.clone()
+}
+
+#[tauri::command]
+fn delete_reminder(id: String, app_handle: tauri::AppHandle, state: State<'_, AppState>) -> AppStateData {
+    let mut data = state.data.lock().unwrap();
+    data.reminders.retain(|r| r.id != id);
+    update_tray_menu(&app_handle, &data);
+    data.clone()
+}
+
+#[tauri::command]
+fn toggle_sound(enabled: bool, state: State<'_, AppState>) -> AppStateData {
+    let mut data = state.data.lock().unwrap();
+    data.sound_enabled = enabled;
     data.clone()
 }
 
@@ -268,14 +484,12 @@ pub fn run() {
             _ => {}
         })
         .setup(|app| {
-            // Setup System Tray Menu
-            let quit_item = MenuItem::with_id(app, "quit", "Keluar Kerja Sehat", true, None::<&str>)?;
-            let show_item = MenuItem::with_id(app, "show", "Buka Aplikasi", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            // Setup System Tray Menu with initial state
+            let initial_state = get_initial_state();
 
             // Safely set up Tray Icon
             let icon = app.default_window_icon().cloned();
-            let mut tray_builder = TrayIconBuilder::new().menu(&menu);
+            let mut tray_builder = TrayIconBuilder::with_id("main_tray");
             if let Some(icon) = icon {
                 tray_builder = tray_builder.icon(icon);
             }
@@ -292,6 +506,23 @@ pub fn run() {
                                 let _ = window.set_focus();
                             }
                         }
+                        id if id.starts_with("log_") => {
+                            let reminder_id = &id[4..];
+                            let state = app.state::<AppState>();
+                            let mut data = state.data.lock().unwrap();
+                            let now = get_current_time();
+                            if let Some(reminder) = data.reminders.iter_mut().find(|r| r.id == reminder_id) {
+                                reminder.progress_count = std::cmp::min(reminder.progress_target, reminder.progress_count + 1);
+                                if reminder.is_enabled {
+                                    reminder.next_trigger = Some(now + (reminder.interval_minutes as u64 * 60));
+                                }
+                            }
+                            let updated_data = data.clone();
+                            drop(data); // Drop lock before updating tray menu and emitting
+                            
+                            update_tray_menu(app, &updated_data);
+                            let _ = app.emit("state-tick", &updated_data);
+                        }
                         _ => {}
                     }
                 })
@@ -306,6 +537,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Initialize tray menu items and tooltips
+            update_tray_menu(app.handle(), &initial_state);
+
             // Spawn background timer task
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -317,12 +551,14 @@ pub fn run() {
                     let mut next_pomodoro_mode = None;
                     let mut state_changed = false;
                     let mut current_state_clone = None;
+                    let current_lang;
 
                     {
                         let state = app_handle.state::<AppState>();
                         let mut data = state.data.lock().unwrap();
                         let now = get_current_time();
                         let today = get_current_date_string();
+                        current_lang = data.language.clone();
 
                         // 1. Midnight Reset Check
                         if data.last_reset_date != today {
@@ -338,7 +574,7 @@ pub fn run() {
                             if reminder.is_enabled {
                                 if let Some(trigger_time) = reminder.next_trigger {
                                     if now >= trigger_time {
-                                        triggered_reminders.push((reminder.label.clone(), reminder.message.clone()));
+                                        triggered_reminders.push((reminder.id.clone(), reminder.label.clone(), reminder.message.clone()));
                                         reminder.next_trigger = Some(now + (reminder.interval_minutes as u64 * 60));
                                         state_changed = true;
                                     }
@@ -363,17 +599,29 @@ pub fn run() {
                                             if pom.sessions_completed % 4 == 0 {
                                                 pom.mode = PomodoroMode::LongBreak;
                                                 pom.current_duration = pom.long_break_duration * 60;
-                                                next_pomodoro_mode = Some("Saatnya Istirahat Panjang (Long Break)!");
+                                                next_pomodoro_mode = Some(if current_lang == "en" {
+                                                    "Time for a Long Break!"
+                                                } else {
+                                                    "Saatnya Istirahat Panjang (Long Break)!"
+                                                }.to_string());
                                             } else {
                                                 pom.mode = PomodoroMode::ShortBreak;
                                                 pom.current_duration = pom.short_break_duration * 60;
-                                                next_pomodoro_mode = Some("Saatnya Istirahat Sejenak (Short Break)!");
+                                                next_pomodoro_mode = Some(if current_lang == "en" {
+                                                    "Time for a Short Break!"
+                                                } else {
+                                                    "Saatnya Istirahat Sejenak (Short Break)!"
+                                                }.to_string());
                                             }
                                         }
                                         PomodoroMode::ShortBreak | PomodoroMode::LongBreak => {
                                             pom.mode = PomodoroMode::Focus;
                                             pom.current_duration = pom.focus_duration * 60;
-                                            next_pomodoro_mode = Some("Saatnya Fokus Kembali!");
+                                            next_pomodoro_mode = Some(if current_lang == "en" {
+                                                "Time to Focus Again!"
+                                            } else {
+                                                "Saatnya Fokus Kembali!"
+                                            }.to_string());
                                         }
                                     }
                                     pom.time_left = pom.current_duration;
@@ -387,6 +635,8 @@ pub fn run() {
 
                         if state_changed {
                             current_state_clone = Some(data.clone());
+                            // Update tray menu on state change in background loop
+                            update_tray_menu(&app_handle, &data);
                         }
                     }
 
@@ -397,7 +647,8 @@ pub fn run() {
 
                     // Handle notifications
                     use tauri_plugin_notification::NotificationExt;
-                    for (label, message) in triggered_reminders {
+                    for (id, label, message) in triggered_reminders {
+                        let _ = app_handle.emit("reminder-triggered", &id);
                         let _ = app_handle.notification()
                             .builder()
                             .title(&label)
@@ -406,12 +657,13 @@ pub fn run() {
                     }
 
                     if pomodoro_triggered {
-                        let title = "Pomodoro Selesai!";
-                        let body = next_pomodoro_mode.unwrap_or("Sesi Anda telah selesai.");
+                        let title = if current_lang == "en" { "Pomodoro Finished!" } else { "Pomodoro Selesai!" };
+                        let body = next_pomodoro_mode.clone().unwrap_or(if current_lang == "en" { "Your session has finished." } else { "Sesi Anda telah selesai." }.to_string());
+                        let _ = app_handle.emit("pomodoro-triggered", &body);
                         let _ = app_handle.notification()
                             .builder()
                             .title(title)
-                            .body(body)
+                            .body(&body)
                             .show();
                     }
                 }
@@ -425,7 +677,11 @@ pub fn run() {
             log_reminder_progress,
             update_reminder_settings,
             control_pomodoro,
-            update_pomodoro_settings
+            update_pomodoro_settings,
+            set_language,
+            add_custom_reminder,
+            delete_reminder,
+            toggle_sound
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
