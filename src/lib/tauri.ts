@@ -70,7 +70,7 @@ const eventListeners = new Map<string, Set<(event: { payload: any }) => void>>()
 // Simulate tick in browser mode
 if (!isTauri()) {
   setInterval(() => {
-    let stateChanged = false;
+    const now = Math.floor(Date.now() / 1000);
 
     // 1. Handle Pomodoro countdowns
     if (mockState.pomodoro.state === "running") {
@@ -106,13 +106,24 @@ if (!isTauri()) {
           pListeners.forEach((cb) => cb({ payload: nextMode }));
         }
       }
-      stateChanged = true;
     }
 
-    // 2. Trigger periodic notifications / state-ticks in browser console for visibility
-    if (stateChanged || Math.random() < 0.05) { // Notify occasionally or on change
-      listeners.forEach((cb) => cb({ payload: { ...mockState } }));
-    }
+    // 2. Handle health reminders countdowns in mock (trigger when time comes)
+    mockState.reminders.forEach((r: any) => {
+      if (r.is_enabled && r.next_trigger) {
+        if (now >= r.next_trigger) {
+          r.next_trigger = now + r.interval_minutes * 60;
+          // Trigger mock reminder notification
+          const rListeners = eventListeners.get("reminder-triggered");
+          if (rListeners) {
+            rListeners.forEach((cb) => cb({ payload: r.id }));
+          }
+        }
+      }
+    });
+
+    // Always send state ticks every second to keep clocks/countdowns up-to-date in browser UI
+    listeners.forEach((cb) => cb({ payload: { ...mockState } }));
   }, 1000);
 }
 

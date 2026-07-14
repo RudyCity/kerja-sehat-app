@@ -328,6 +328,17 @@ fn update_tray_menu(app_handle: &tauri::AppHandle, data: &AppStateData) {
         let _ = menu.append(&show_item);
     }
 
+    // Add current time item
+    let local_time = Local::now().format("%H:%M:%S").to_string();
+    let time_label = if lang == "en" {
+        format!("🕒 Time: {}", local_time)
+    } else {
+        format!("🕒 Waktu: {}", local_time)
+    };
+    if let Ok(time_item) = MenuItem::with_id(app_handle, "current_time", &time_label, false, None::<&str>) {
+        let _ = menu.append(&time_item);
+    }
+
     if let Ok(sep) = PredefinedMenuItem::separator(app_handle) {
         let _ = menu.append(&sep);
     }
@@ -380,7 +391,26 @@ fn update_tray_menu(app_handle: &tauri::AppHandle, data: &AppStateData) {
                 "posture" => "🪑",
                 _ => "✨",
             };
-            let rem_label = format!("{} {}: {}/{}", emoji, r.label, r.progress_count, r.progress_target);
+            
+            // Calculate remaining time
+            let now = get_current_time();
+            let time_suffix = if let Some(next) = r.next_trigger {
+                if next > now {
+                    let diff_secs = next - now;
+                    let mins = diff_secs / 60;
+                    if mins > 0 {
+                        format!(" ({}m)", mins)
+                    } else {
+                        if lang == "en" { " (<1m)".to_string() } else { " (<1m)".to_string() }
+                    }
+                } else {
+                    if lang == "en" { " (now)".to_string() } else { " (sekarang)".to_string() }
+                }
+            } else {
+                "".to_string()
+            };
+
+            let rem_label = format!("{} {}: {}/{}{}", emoji, r.label, r.progress_count, r.progress_target, time_suffix);
             let menu_id = format!("log_{}", r.id);
             if let Ok(rem_item) = MenuItem::with_id(app_handle, &menu_id, &rem_label, true, None::<&str>) {
                 let _ = menu.append(&rem_item);
@@ -637,9 +667,10 @@ pub fn run() {
 
                         if state_changed {
                             current_state_clone = Some(data.clone());
-                            // Update tray menu on state change in background loop
-                            update_tray_menu(&app_handle, &data);
                         }
+
+                        // Always update tray menu to keep current clock time and reminder countdowns fresh!
+                        update_tray_menu(&app_handle, &data);
                     }
 
                     // Emit state update event

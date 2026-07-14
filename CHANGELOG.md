@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.13] - 2026-07-14
+
+### Added
+- **System Tray Clock & Countdowns**:
+  - Added a live digital system clock (e.g. `🕒 Waktu: 15:41:45`) at the top of the System Tray menu that updates every second.
+  - Added real-time remaining countdown minutes (e.g. `💧 Minum Air: 0/8 (55m)`) for each active health reminder in the tray menu.
+  - Optimized the background thread loop to update the system tray menu every second while only sending state ticks to the React frontend on actual state updates to conserve resources.
+- **Start/Stop Health Reminders**:
+  - Replaced the simple toggle switch in each health reminder card with segmented **Start** and **Stop** button controls.
+  - Added visual styling to clearly indicate running and stopped states (with theme color glow for Start and a dark solid gray background for Stop).
+- **Browser Mock Layer Tick**:
+  - Updated mock state updates to trigger state ticks every second in browser development mode, ensuring countdowns tick down smoothly in browser UI.
+
 ## [0.1.12] - 2026-07-14
 
 ### Added

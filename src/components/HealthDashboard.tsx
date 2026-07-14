@@ -161,21 +161,34 @@ function ReminderCard({
           </div>
         </div>
 
-        {/* Toggle */}
-        <button
-          onClick={() => onToggle(reminder.id, !reminder.is_enabled)}
-          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-all duration-300 focus:outline-none mt-0.5 ${
-            reminder.is_enabled ? "shadow-md" : "bg-zinc-800"
-          }`}
-          style={reminder.is_enabled ? { backgroundColor: cfg.color, boxShadow: `0 0 10px ${cfg.color}50` } : {}}
-          title={reminder.is_enabled ? (lang === "en" ? "Deactivate" : "Nonaktifkan") : (lang === "en" ? "Activate" : "Aktifkan")}
-        >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-              reminder.is_enabled ? "translate-x-4" : "translate-x-0"
+        {/* Start / Stop Button Group */}
+        <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 border border-white/5 mt-0.5">
+          <button
+            onClick={() => onToggle(reminder.id, true)}
+            disabled={reminder.is_enabled}
+            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-200 active:scale-95 disabled:pointer-events-none ${
+              reminder.is_enabled
+                ? "text-slate-950 font-black shadow-sm"
+                : "text-zinc-500 hover:text-zinc-300"
             }`}
-          />
-        </button>
+            style={reminder.is_enabled ? { backgroundColor: cfg.color, boxShadow: `0 0 10px ${cfg.color}50` } : {}}
+            title={lang === "en" ? "Activate" : "Aktifkan"}
+          >
+            {lang === "en" ? "Start" : "Mulai"}
+          </button>
+          <button
+            onClick={() => onToggle(reminder.id, false)}
+            disabled={!reminder.is_enabled}
+            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-200 active:scale-95 disabled:pointer-events-none ${
+              !reminder.is_enabled
+                ? "bg-zinc-800 text-zinc-400 border border-zinc-700/50"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+            title={lang === "en" ? "Deactivate" : "Nonaktifkan"}
+          >
+            {lang === "en" ? "Stop" : "Stop"}
+          </button>
+        </div>
       </div>
 
       {/* ── Message ────────────────────────────────────────── */}
