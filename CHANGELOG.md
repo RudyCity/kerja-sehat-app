@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.12] - 2026-07-14
+
+### Added
+- **Auto-Updater Support (Tauri v2)**: Enabled Tauri's native auto-updater plugin to automatically check, download, and install newer versions of the app.
+- **GitHub Action Release Workflow**: Configured CI/CD workflow to compile, bundle, and sign installers for Windows, macOS, and Linux, and draft GitHub Releases when a new tag is pushed.
+- **UI Version & Update Controls**: Displayed the current running version in the sidebar navigation footer. Added a card in the Settings panel allowing users to manually check for updates, view progress, and restart the app to apply them (with mock simulations in browser mode).
+
 ## [0.1.11] - 2026-07-14
 
 ### Added

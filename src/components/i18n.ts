@@ -97,6 +97,18 @@ export const translations = {
     sound_enabled_desc: "Putar suara bel/chime saat pengingat aktif atau sesi Pomodoro selesai.",
     test_sound_button: "Uji Coba Suara",
     sound_toggled_msg: "Pengaturan suara berhasil disimpan!",
+    // Updater
+    updater_title: "Pembaruan Aplikasi",
+    updater_desc: "Periksa dan pasang pembaruan versi terbaru untuk aplikasi Kerja Sehat.",
+    check_update_button: "Periksa Pembaruan",
+    checking_update: "Memeriksa pembaruan...",
+    update_available: "Pembaruan tersedia! Versi:",
+    update_not_available: "Aplikasi sudah dalam versi terbaru.",
+    downloading_update: "Mengunduh pembaruan...",
+    update_downloaded: "Pembaruan berhasil diunduh. Silakan restart aplikasi.",
+    install_relaunch: "Restart Aplikasi",
+    current_version_label: "Versi Saat Ini:",
+    update_error: "Gagal memeriksa/memasang pembaruan.",
   },
   en: {
     loading: "Loading Kerja Sehat data...",
@@ -196,6 +208,18 @@ export const translations = {
     sound_enabled_desc: "Play a chime sound when a reminder triggers or a Pomodoro session finishes.",
     test_sound_button: "Test Sound",
     sound_toggled_msg: "Sound settings updated successfully!",
+    // Updater
+    updater_title: "App Updates",
+    updater_desc: "Check for and install the latest version updates for Kerja Sehat.",
+    check_update_button: "Check for Updates",
+    checking_update: "Checking for updates...",
+    update_available: "Update available! Version:",
+    update_not_available: "Application is up to date.",
+    downloading_update: "Downloading update...",
+    update_downloaded: "Update downloaded successfully. Please restart the app.",
+    install_relaunch: "Restart Application",
+    current_version_label: "Current Version:",
+    update_error: "Failed to check or install updates.",
   }
 };
 

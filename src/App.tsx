@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke, listen, isTauri } from "@/lib/tauri";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { 
   Droplet, 
   Activity, 
@@ -91,8 +93,112 @@ function App() {
   const [newInterval, setNewInterval] = useState(30);
   const [newTarget, setNewTarget] = useState(8);
 
+  // Updater state
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "available" | "uptodate" | "downloading" | "downloaded" | "error">("idle");
+  const [updateVersion, setUpdateVersion] = useState<string>("");
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [errorMessage, setErrorMessage] = useState<string>("");
+
   const lang: Language = (state?.language as Language) || "id";
   const t = translations[lang];
+
+  const handleCheckForUpdates = async (interactive = true) => {
+    if (interactive) {
+      setUpdateStatus("checking");
+    }
+    
+    if (!isTauri()) {
+      setTimeout(() => {
+        if (interactive) {
+          setUpdateStatus("available");
+          setUpdateVersion("0.1.13");
+        } else {
+          setUpdateStatus("uptodate");
+        }
+      }, 1500);
+      return;
+    }
+
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateVersion(update.version);
+        setUpdateStatus("available");
+      } else {
+        setUpdateStatus("uptodate");
+      }
+    } catch (err: any) {
+      console.error("Update check error:", err);
+      setErrorMessage(err.message || String(err));
+      setUpdateStatus("error");
+    }
+  };
+
+  const handleDownloadAndInstall = async () => {
+    if (!isTauri()) {
+      setUpdateStatus("downloading");
+      setDownloadProgress(0);
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 20;
+        setDownloadProgress(progress);
+        if (progress >= 100) {
+          clearInterval(interval);
+          setUpdateStatus("downloaded");
+        }
+      }, 500);
+      return;
+    }
+
+    try {
+      setUpdateStatus("downloading");
+      setDownloadProgress(0);
+      
+      const update = await check();
+      if (update) {
+        let downloaded = 0;
+        let contentLength = 0;
+        await update.downloadAndInstall((event) => {
+          switch (event.event) {
+            case 'Started':
+              contentLength = event.data.contentLength || 0;
+              break;
+            case 'Progress':
+              downloaded += event.data.chunkLength;
+              if (contentLength > 0) {
+                setDownloadProgress(Math.round((downloaded / contentLength) * 100));
+              } else {
+                setDownloadProgress((prev) => Math.min(99, prev + 5));
+              }
+              break;
+            case 'Finished':
+              setDownloadProgress(100);
+              break;
+          }
+        });
+        setUpdateStatus("downloaded");
+      } else {
+        setUpdateStatus("uptodate");
+      }
+    } catch (err: any) {
+      console.error("Download and install error:", err);
+      setErrorMessage(err.message || String(err));
+      setUpdateStatus("error");
+    }
+  };
+
+  const handleRelaunch = async () => {
+    if (!isTauri()) {
+      alert("Simulasi Restart Aplikasi!");
+      setUpdateStatus("idle");
+      return;
+    }
+    try {
+      await relaunch();
+    } catch (err) {
+      console.error("Relaunch error:", err);
+    }
+  };
 
   // Fetch state on mount
   useEffect(() => {
@@ -108,6 +214,11 @@ function App() {
       });
 
       const initialRemSettings: Record<string, { label: string; message: string; interval: number; target: number }> = {};
+      
+      // Silent check for updates on startup
+      if (isTauri()) {
+        handleCheckForUpdates(false);
+      }
       initialState.reminders.forEach((r) => {
         initialRemSettings[r.id] = { label: r.label, message: r.message, interval: r.interval_minutes, target: r.progress_target };
       });
@@ -360,15 +471,21 @@ function App() {
             </nav>
           </div>
 
-          {/* Footer Sidebar */}
-          <div className="flex flex-col gap-3 rounded-xl bg-white/5 p-4 border border-white/5">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-indigo-400" />
-              <span className="text-xs font-semibold text-zinc-300">{t.quote_title}</span>
+          {/* Bottom Area (Quote + Version) */}
+          <div className="flex flex-col gap-2">
+            {/* Footer Sidebar */}
+            <div className="flex flex-col gap-3 rounded-xl bg-white/5 p-4 border border-white/5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-400" />
+                <span className="text-xs font-semibold text-zinc-300">{t.quote_title}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-400 italic">
+                {t.quote_desc}
+              </p>
             </div>
-            <p className="text-[11px] leading-relaxed text-zinc-400 italic">
-              {t.quote_desc}
-            </p>
+            <div className="text-center text-[10px] text-zinc-500 font-medium">
+              Kerja Sehat v0.1.12
+            </div>
           </div>
         </div>
       </div>
@@ -812,6 +929,76 @@ function App() {
                     </Button>
                   </div>
                 </form>
+              </CardContent>
+            </Card>
+
+            {/* App Updates Segment */}
+            <Card className="border-white/5 bg-slate-900/30 glass-card">
+              <CardHeader className="px-6 pt-6 pb-4">
+                <CardTitle className="text-base font-bold text-white flex items-center gap-2.5">
+                  <Activity className="h-5 w-5 text-indigo-400" />
+                  {t.updater_title}
+                </CardTitle>
+                <CardDescription className="text-xs text-zinc-400">{t.updater_desc}</CardDescription>
+              </CardHeader>
+              <CardContent className="px-6 pb-6 flex flex-col gap-4">
+                <div className="flex flex-col gap-3 rounded-xl border border-white/5 bg-white/5 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white">{t.current_version_label} <span className="text-indigo-400 font-mono">v0.1.12</span></p>
+                      <div className="text-xs text-zinc-400 mt-1 font-medium">
+                        {updateStatus === "idle" && "Klik tombol untuk memeriksa pembaruan."}
+                        {updateStatus === "checking" && t.checking_update}
+                        {updateStatus === "available" && `${t.update_available} v${updateVersion}`}
+                        {updateStatus === "uptodate" && t.update_not_available}
+                        {updateStatus === "downloading" && `${t.downloading_update} (${downloadProgress}%)`}
+                        {updateStatus === "downloaded" && t.update_downloaded}
+                        {updateStatus === "error" && `${t.update_error} ${errorMessage}`}
+                      </div>
+                    </div>
+                    {updateStatus === "downloading" && (
+                      <div className="relative flex h-10 w-10 items-center justify-center shrink-0">
+                        <svg className="h-10 w-10 transform -rotate-90">
+                          <circle cx="20" cy="20" r="16" className="stroke-white/10" strokeWidth="3" fill="transparent" />
+                          <circle cx="20" cy="20" r="16" className="stroke-indigo-500 transition-all duration-300" strokeWidth="3" fill="transparent" strokeDasharray={100} strokeDashoffset={100 - downloadProgress} />
+                        </svg>
+                        <span className="absolute text-[10px] font-bold text-indigo-400">{downloadProgress}%</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {updateStatus === "downloading" && (
+                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end">
+                  {updateStatus === "available" ? (
+                    <Button
+                      onClick={handleDownloadAndInstall}
+                      className="h-10 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/25 border border-indigo-500/20"
+                    >
+                      Unduh & Pasang Pembaruan
+                    </Button>
+                  ) : updateStatus === "downloaded" ? (
+                    <Button
+                      onClick={handleRelaunch}
+                      className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all active:scale-95 shadow-lg shadow-emerald-600/25 border border-emerald-500/20"
+                    >
+                      {t.install_relaunch}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => handleCheckForUpdates(true)}
+                      disabled={updateStatus === "checking"}
+                      className="h-10 px-5 bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white font-bold rounded-xl transition-all border border-white/5 active:scale-95"
+                    >
+                      {updateStatus === "checking" ? t.checking_update : t.check_update_button}
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
