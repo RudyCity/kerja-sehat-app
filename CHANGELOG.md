@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.14] - 2026-07-14
+
+### Changed
+- **Tauri Updater Signing Key**: Generated a new public/private key pair for signing updater artifacts, fixing the Publish Release workflow failures on GitHub Actions.
+
 ## [0.1.13] - 2026-07-14
 
 ### Added

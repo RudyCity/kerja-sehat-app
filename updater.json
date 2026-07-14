@@ -1,6 +1,6 @@
 {
-  "version": "0.1.13",
-  "notes": "Rilis baru dengan tampilan jam digital di system tray, waktu countdown untuk setiap pengingat aktif, serta tombol Start dan Stop pada dashboard kesehatan.",
-  "pub_date": "2026-07-14T08:44:00Z",
+  "version": "0.1.14",
+  "notes": "Rilis baru dengan perbaikan kunci tanda tangan updater, tampilan jam digital di system tray, waktu countdown untuk setiap pengingat aktif, serta tombol Start dan Stop pada dashboard kesehatan.",
+  "pub_date": "2026-07-14T08:58:00Z",
   "platforms": {}
 }
